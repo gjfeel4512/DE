@@ -25,8 +25,34 @@ QUERY_RESULT_S3 = f"s3://{BUCKET_NAME}/athena/dags/"
 GOLD_PREFIX = "gold/daily_report_ctas/"
 GOLD_LOCATION = f"s3://{BUCKET_NAME}/{GOLD_PREFIX}"
 
+# 처리대상 날짜, 시간등 세팅
+TARGET_DATE  = "{{ dag_run.conf.get('target_date', ds) }}"
+TARGET_YEAR  = "2026" #"{{ dag_run.conf.get('target_date', ds)[0:4] }}"
+TARGET_MONTH = "08"   #"{{ dag_run.conf.get('target_date', ds)[5:7] }}" 
+TARGET_DAY   = "26"   #"{{ dag_run.conf.get('target_date', ds)[8:10] }}"
+
 # 3. DAG 정의
+with DAG(  
+  dag_id      = "10_cats_gold_data",
+  description = "Silver -> DAG + Athena -> Gold, parquet 생성",
+  default_args= {
+    "owner"           : "aic-de1-admin",    
+    "retries"         : 1,
+    "retry_delay"     : timedelta(minutes=1)
+  },
+  schedule_interval = "0 5 * * *", # 00시 05분 00초에 참고용
+  start_date  = pendulum.datetime( 2026,6,29, tz=pendulum.timezone("Asia/Seoul") ),
+  catchup     = False,
+  tags        = ['aws', 'athena', 'ctas']
+) as dag: 
 
     # 4. task 정의 (오퍼레이터 사용)
+    # 4-1. 기존 CTAS Gold 테이블 삭제
+    t1_drop_gold_table = AthenaOperator()
+    # 4-2. 기존 CTAS S3 데이터 삭제
+    t2_delete_gold_s3  = S3DeleteObjectsOperator()
+    # 4-3. CTAS 실행 (silver sql 수행 => 결과 => 테이블 구성 => 결과 데이터는 parquet 저장)
+    t3_create_gold_table_with_ctas = AthenaOperator()
 
     # 5. 의존성 구성 (수행 순서 >> )
+    t1_drop_gold_table  >> t2_delete_gold_s3 >> t3_create_gold_table_with_ctas
