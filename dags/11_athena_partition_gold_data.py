@@ -25,7 +25,7 @@ QUERY_RESULT_S3     = f"s3://{BUCKET_NAME}/athena/dags/"
 
 # 실제 데이터 저장위치 => parquet 저장
 GOLD_PREFIX         = "gold/daily_report/"
-GOLD_LOCATION       = f"s3://{BUCKET_NAME}/{GOLD_PREFIX}" 
+GOLD_LOCATION       = f"s3://{BUCKET_NAME}/{GOLD_PREFIX}"
 
 # 처리대상 날짜, 시간등 세팅 (yyyy:MM:dd hh:mm:ss) -> 추후 실제 작동시에는 주석 내용 반영
 TARGET_DATE  = "2026-08-26" # "{{ dag_run.conf.get('target_date', ds) }}"
@@ -34,6 +34,7 @@ TARGET_MONTH = "08"   #"{{ dag_run.conf.get('target_date', ds)[5:7] }}"
 TARGET_DAY   = "26"   #"{{ dag_run.conf.get('target_date', ds)[8:10] }}"
 
 # 매일 1개의 데이터셋 구성 => 파티션 사용 권장
+# s3://버킷/gold/daily_report//year=2026/month=08/day=26/
 # s3://버킷/gold/daily_report/year=2026/month=08/day=26/
 GOLD_PARTITION_PREFIX = f"{GOLD_PREFIX}year={TARGET_YEAR}/month={TARGET_MONTH}/day={TARGET_DAY}/"
 
@@ -121,7 +122,7 @@ with DAG(
     # 4-4. 당일 전체 데이터에 대한(파티션 수행) 데이터 insert 처리
     t4_insert_gold_table = AthenaOperator(
         task_id = "insert_gold_table",
-        # sql
+        # 데이터 조회하여 insert 할때 파티션정보를 같이 추가하여, 해당 결과셋을 parquet로 만들어서 어떤 위치에 저장할지 지정
         query = f'''
             insert into {GOLD_TABLE_NAME}
             select
@@ -144,9 +145,10 @@ with DAG(
                 MAX(response.latency_ms) AS max_latency_ms,
                 COALESCE( SUM(request.request_bytes), 0 ) AS total_request_bytes,
                 COALESCE( SUM(response.response_bytes), 0 ) AS total_response_bytes,
-                '{TARGET_YEAR}' AS year,
-                '{TARGET_MONTH}' AS month,
-                '{TARGET_DAY}' AS day    
+                
+                '{TARGET_YEAR}' as year,
+                '{TARGET_MONTH}' as month,
+                '{TARGET_DAY}' as day
             from {SILVER_TABLE_NAME}
             where 
                 year='{TARGET_YEAR}' and
