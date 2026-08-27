@@ -1,10 +1,11 @@
-# Silver -> Gold (운영형/ 데이터는 파티션 단위로 insert 처리된(일간 집계 데이터), 기존 데이터 삭제x, 테이블 삭제 x)
+# Silver -> Gold (운영형/ 데이터는 파티션 단위로 insert 처리됨(일간 집계 데이터), 기존 데이터 삭제 x, 테이블 삭제 x)
 
 # 1. 모듈 가져오기
 from datetime import timedelta
 import pendulum
 from airflow import DAG
 from airflow.providers.amazon.aws.operators.athena import AthenaOperator
+# 하루에 여러번 수행시 -> 재실행 -> 기존 데이터가 대체되는 방식 필요
 from airflow.providers.amazon.aws.operators.s3 import S3DeleteObjectsOperator
 
 # 2. 환경변수
@@ -39,7 +40,7 @@ GOLD_PARTITION_PREFIX = f"{GOLD_PREFIX}/year={TARGET_YEAR}/month={TARGET_MONTH}/
 # 3. DAG 정의
 with DAG(  
   dag_id      = "11_athena_partition_gold_data",
-  description = "Silver -> Partition 단위로 Gold, parquet 생성",
+  description = "Silver -> Partition 단위 Gold, parquet 생성",
   default_args= {
     "owner"           : "aic-de1-admin",    
     "retries"         : 1,
@@ -53,6 +54,7 @@ with DAG(
 
     # 4. task 정의 (오퍼레이터 사용)
     # 4-1. Gold 테이블 생성 (최초 실행시 1회 생성 -> 이후 테이블 유지)
+    #      실습 : gold_daily_report_tbl, 컬럼 (desc gold_daily_report_ctas_tbl; <- 내용으로 배치)
     t1_create_gold_table = AthenaOperator(
         task_id = "create_gold_table",
         # sql
@@ -93,9 +95,27 @@ with DAG(
     
 
     # 4-2. 동일날짜에 대해서 중복적 실행하는 컨셉이라면 -> 허용(1일 1회인데 허용), 하루에 여러번 수행 컨셉(누적)
+    t2_drop_partition = AthenaOperator(
+        task_id = "drop_partition",
+        query = f'''
+            ALTER TABLE {GOLD_TABLE_NAME}
+            DROP if exists Partition (
+              year  = '{TARGET_YEAR}',
+              month = '{TARGET_MONTH}',
+              day   = '{TARGET_DAY}'  
+            )
+        ''',
+        aws_conn_id = AWS_CONN_ID,
+        database    = DATABASE_NAME,
+        output_location = QUERY_RESULT_S3,
+        # workgroup   = "de-ai-25-loggen-analysis"
+    )
+    
     # 4-3. 누적 교체하는 관점 -> 데이터 삭제 처리 필요
-    # 4-4. 당일 전체 데이처에 대한(파티션 수행) 데이터 insert 처리
+    # 4-4. 당일 전체 데이터에 대한(파티션 수행) 데이터 insert 처리
+    
 
+    
     # # 4-1. 기존 CTAS Gold 테이블 삭제
     # t1_drop_gold_table = AthenaOperator(
     #     task_id = "drop_gold_table",
@@ -166,4 +186,4 @@ with DAG(
     # )
 
     # 5. 의존성 구성 (수행 순서 >> )
-    t1_create_gold_table  #>> t2_delete_gold_s3 >> t3_create_gold_table_with_ctas
+    t1_create_gold_table >> t2_drop_partition
