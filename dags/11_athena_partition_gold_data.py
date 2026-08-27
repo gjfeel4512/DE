@@ -26,11 +26,15 @@ QUERY_RESULT_S3     = f"s3://{BUCKET_NAME}/athena/dags/"
 GOLD_PREFIX         = "gold/daily_report/"
 GOLD_LOCATION       = f"s3://{BUCKET_NAME}/{GOLD_PREFIX}"
 
-# 처리대상 날짜, 시간등 세팅 (yyyy:MM:dd hh:mm:ss) -> 추후 실제 작동시 에는 주석 내용 반영
-TARGET_DATE  = "2026-08-26" #{{ dag_run.conf.get('target_date', ds) }}"
+# 처리대상 날짜, 시간등 세팅 (yyyy:MM:dd hh:mm:ss) -> 추후 실제 작동시에는 주석 내용 반영
+TARGET_DATE  = "2026-08-26" # "{{ dag_run.conf.get('target_date', ds) }}"
 TARGET_YEAR  = "2026" #"{{ dag_run.conf.get('target_date', ds)[0:4] }}"
 TARGET_MONTH = "08"   #"{{ dag_run.conf.get('target_date', ds)[5:7] }}"
 TARGET_DAY   = "26"   #"{{ dag_run.conf.get('target_date', ds)[8:10] }}"
+
+# 매일 1개의 데이터셋 구성 => 파티션 사용 권장
+# s3://버킷/gold/daily_report/year=2026/month=08/day=26/
+GOLD_PARTITION_PREFIX = f"{GOLD_PREFIX}/year={TARGET_YEAR}/month={TARGET_MONTH}/day={TARGET_DAY}/"
 
 # 3. DAG 정의
 with DAG(  
